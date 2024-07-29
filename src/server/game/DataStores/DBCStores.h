@@ -35,6 +35,13 @@ TalentSpellPos const* GetTalentSpellPos(uint32 spellId);
 
 WMOAreaTableEntry const* GetWMOAreaTableEntryByTripple(int32 rootid, int32 adtid, int32 groupid);
 
+
+// -1 if not found
+int32 GetAreaFlagByAreaID(uint32 area_id);
+uint32 GetAreaFlagByMapId(uint32 mapid);
+AreaTableEntry const* GetAreaEntryByAreaID(uint32 area_id);
+AreaTableEntry const* GetAreaEntryByAreaFlagAndMap(uint32 area_flag, uint32 map_id);
+
 uint32 GetVirtualMapForMapAndZone(uint32 mapid, uint32 zoneId);
 
 enum ContentLevels : uint8
@@ -139,7 +146,7 @@ extern DBCStorage <ItemLimitCategoryEntry>       sItemLimitCategoryStore;
 extern DBCStorage <ItemRandomPropertiesEntry>    sItemRandomPropertiesStore;
 extern DBCStorage <ItemRandomSuffixEntry>        sItemRandomSuffixStore;
 extern DBCStorage <ItemSetEntry>                 sItemSetStore;
-extern DBCStorage <LFGDungeonEntry>           sLFGDungeonStore;
+extern DBCStorage <LFGDungeonEntry>              sLFGDungeonStore;
 extern DBCStorage <LiquidTypeEntry>              sLiquidTypeStore;
 extern DBCStorage <LockEntry>                    sLockStore;
 extern DBCStorage <MailTemplateEntry>            sMailTemplateStore;
@@ -175,7 +182,7 @@ extern std::unordered_set<uint32>                sPetTalentSpells;
 extern DBCStorage <SpellRadiusEntry>             sSpellRadiusStore;
 extern DBCStorage <SpellRangeEntry>              sSpellRangeStore;
 extern DBCStorage <SpellRuneCostEntry>           sSpellRuneCostStore;
-extern DBCStorage <SpellShapeshiftEntry>         sSpellShapeshiftStore;
+extern DBCStorage <SpellShapeshiftFormEntry>     sSpellShapeshiftFormStore;
 extern DBCStorage <SpellEntry>                   sSpellStore;
 extern DBCStorage <SpellVisualEntry>             sSpellVisualStore;
 extern DBCStorage <StableSlotPricesEntry>        sStableSlotPricesStore;
