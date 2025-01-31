@@ -18,7 +18,6 @@
 #include "PointMovementGenerator.h"
 #include "Creature.h"
 #include "CreatureAI.h"
-#include "Errors.h"
 #include "MoveSpline.h"
 #include "MoveSplineInit.h"
 #include "ObjectAccessor.h"
@@ -48,6 +47,10 @@ void PointMovementGenerator<T>::DoInitialize(T* unit)
 
     i_recalculateSpeed = false;
     Movement::MoveSplineInit init(unit);
+    /// Added by mod-playerbots
+    if (_orientationInversed)
+        init.SetOrientationInversed();
+    /// End added
     if (m_precomputedPath.size() > 2) // pussywizard: for charge
         init.MovebyPath(m_precomputedPath);
     else if (_generatePath)

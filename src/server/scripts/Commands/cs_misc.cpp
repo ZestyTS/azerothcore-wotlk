@@ -34,6 +34,7 @@
 #include "Language.h"
 #include "MapMgr.h"
 #include "MiscPackets.h"
+#include "MMapFactory.h"
 #include "MovementGenerator.h"
 #include "ObjectAccessor.h"
 #include "Pet.h"
@@ -145,7 +146,8 @@ public:
             { "playall",           HandlePlayAllCommand,           SEC_GAMEMASTER,         Console::No  },
             { "skirmish",          HandleSkirmishCommand,          SEC_ADMINISTRATOR,      Console::No  },
             { "mailbox",           HandleMailBoxCommand,           SEC_MODERATOR,          Console::No  },
-            { "string",            HandleStringCommand,            SEC_GAMEMASTER,         Console::No  }
+            { "string",            HandleStringCommand,            SEC_GAMEMASTER,         Console::No  },
+            { "opendoor",          HandleOpenDoorCommand,          SEC_GAMEMASTER,         Console::No  }
         };
 
         return commandTable;
@@ -157,9 +159,6 @@ public:
 
         if (args.empty() || !tokens.size())
         {
-            handler->PSendSysMessage("Usage: .skirmish [arena] [XvX] [Nick1] [Nick2] ... [NickN]");
-            handler->PSendSysMessage("[arena] can be \"all\" or comma-separated list of possible arenas (NA, BE, RL, DS, RV).");
-            handler->PSendSysMessage("[XvX] can be 1v1, 2v2, 3v3, 5v5. After [XvX] specify enough nicknames for that mode.");
             handler->SetSentErrorMessage(true);
             return false;
         }
@@ -281,7 +280,7 @@ public:
                 break;
             }
 
-            if (plr->isUsingLfg())
+            if (plr->IsUsingLfg())
             {
                 error = 4;
                 break;
@@ -1160,19 +1159,15 @@ public:
     static bool HandleReviveCommand(ChatHandler* handler, Optional<PlayerIdentifier> target)
     {
         if (!target)
-        {
             target = PlayerIdentifier::FromTargetOrSelf(handler);
-        }
 
         if (!target)
-        {
             return false;
-        }
 
         if (target->IsConnected())
         {
             auto targetPlayer = target->GetConnectedPlayer();
-
+            targetPlayer->RemoveAurasDueToSpell(27827); // Spirit of Redemption
             targetPlayer->ResurrectPlayer(!AccountMgr::IsPlayerAccount(targetPlayer->GetSession()->GetSecurity()) ? 1.0f : 0.5f);
             targetPlayer->SpawnCorpseBones();
             targetPlayer->SaveToDB(false, false);
@@ -3039,6 +3034,19 @@ public:
             handler->SendSysMessage(str);
             return true;
         }
+    }
+
+    static bool HandleOpenDoorCommand(ChatHandler* handler, Optional<float> range)
+    {
+        if (GameObject* go = handler->GetPlayer()->FindNearestGameObjectOfType(GAMEOBJECT_TYPE_DOOR, range ? *range : 5.0f))
+        {
+            go->SetGoState(GO_STATE_ACTIVE);
+            handler->PSendSysMessage(LANG_CMD_DOOR_OPENED, go->GetName(), go->GetEntry());
+            return true;
+        }
+
+        handler->SendErrorMessage(LANG_CMD_NO_DOOR_FOUND, range ? *range : 5.0f);
+        return false;
     }
 };
 
