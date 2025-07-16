@@ -375,8 +375,8 @@ bool WorldSession::Update(uint32 diff, PacketFilter& updater)
                         //! the client to be in world yet. We will re-add the packets to the bottom of the queue and process them later.
                         if (!m_playerRecentlyLogout)
                         {
-                            requeuePackets.push_back(packet);
-                            deletePacket = false;
+                            //requeuePackets.push_back(packet);
+                            //deletePacket = false;
 
                             LOG_DEBUG("network", "Delaying processing of message with status STATUS_LOGGEDIN: No players in the world for account id {}", GetAccountId());
                         }
@@ -659,7 +659,7 @@ void WorldSession::LogoutPlayer(bool save)
             _player->RepopAtGraveyard();
 
         sOutdoorPvPMgr->HandlePlayerLeaveZone(_player, _player->GetZoneId());
-        sWorldState->HandlePlayerLeaveZone(_player, static_cast<WorldStateZoneId>(_player->GetZoneId()));
+        sWorldState->HandlePlayerLeaveZone(_player, static_cast<AreaTableIDs>(_player->GetZoneId()));
 
         // pussywizard: remove from battleground queues on logout
         for (int i = 0; i < PLAYER_MAX_BATTLEGROUND_QUEUES; ++i)

@@ -80,6 +80,7 @@ Map::Map(uint32 id, uint32 InstanceId, uint8 SpawnMode, Map* _parent) :
     m_parentMap = (_parent ? _parent : this);
 
     _zonePlayerCountMap.clear();
+    _updatableObjectListRecheckTimer.SetInterval(UPDATABLE_OBJECT_LIST_RECHECK_TIMER);
 
     //lets initialize visibility distance for map
     Map::InitVisibilityDistance();
@@ -102,10 +103,10 @@ void Map::InitVisibilityDistance()
 
     switch (GetId())
     {
-        case 609: // Scarlet Enclave (DK starting zone)
+        case MAP_EBON_HOLD: // Scarlet Enclave (DK starting zone)
             m_VisibleDistance = 125.0f;
             break;
-        case 25: // Scott Test (box map)
+        case MAP_SCOTT_TEST: // (box map)
             m_VisibleDistance = 200.0f;
             break;
     }
@@ -492,45 +493,7 @@ bool Map::AddToMap(MotionTransport* obj, bool /*checkTransport*/)
     return true;
 }
 
-void Map::VisitNearbyCellsOfPlayer(Player* player, TypeContainerVisitor<Acore::ObjectUpdater, GridTypeMapContainer>& gridVisitor,
-                                   TypeContainerVisitor<Acore::ObjectUpdater, WorldTypeMapContainer>& worldVisitor,
-                                   TypeContainerVisitor<Acore::ObjectUpdater, GridTypeMapContainer>& largeGridVisitor,
-                                   TypeContainerVisitor<Acore::ObjectUpdater, WorldTypeMapContainer>& largeWorldVisitor)
-{
-    // check for valid position
-    if (!player->IsPositionValid())
-        return;
-
-    // check normal grid activation range of the player
-    VisitNearbyCellsOf(player, gridVisitor, worldVisitor, largeGridVisitor, largeWorldVisitor);
-
-    // check maximum visibility distance for large creatures
-    CellArea area = Cell::CalculateCellArea(player->GetPositionX(), player->GetPositionY(), MAX_VISIBILITY_DISTANCE);
-
-    for (uint32 x = area.low_bound.x_coord; x <= area.high_bound.x_coord; ++x)
-    {
-        for (uint32 y = area.low_bound.y_coord; y <= area.high_bound.y_coord; ++y)
-        {
-            // marked cells are those that have been visited
-            // don't visit the same cell twice
-            uint32 cell_id = (y * TOTAL_NUMBER_OF_CELLS_PER_MAP) + x;
-            if (isCellMarkedLarge(cell_id))
-                continue;
-
-            markCellLarge(cell_id);
-            CellCoord pair(x, y);
-            Cell cell(pair);
-
-            Visit(cell, largeGridVisitor);
-            Visit(cell, largeWorldVisitor);
-        }
-    }
-}
-
-void Map::VisitNearbyCellsOf(WorldObject* obj, TypeContainerVisitor<Acore::ObjectUpdater, GridTypeMapContainer>& gridVisitor,
-                             TypeContainerVisitor<Acore::ObjectUpdater, WorldTypeMapContainer>& worldVisitor,
-                             TypeContainerVisitor<Acore::ObjectUpdater, GridTypeMapContainer>& largeGridVisitor,
-                             TypeContainerVisitor<Acore::ObjectUpdater, WorldTypeMapContainer>& largeWorldVisitor)
+void Map::MarkNearbyCellsOf(WorldObject* obj)
 {
     // Check for valid position
     if (!obj->IsPositionValid())
@@ -538,30 +501,13 @@ void Map::VisitNearbyCellsOf(WorldObject* obj, TypeContainerVisitor<Acore::Objec
 
     // Update mobs/objects in ALL visible cells around object!
     CellArea area = Cell::CalculateCellArea(obj->GetPositionX(), obj->GetPositionY(), obj->GetGridActivationRange());
-
     for (uint32 x = area.low_bound.x_coord; x <= area.high_bound.x_coord; ++x)
     {
         for (uint32 y = area.low_bound.y_coord; y <= area.high_bound.y_coord; ++y)
         {
             // marked cells are those that have been visited
-            // don't visit the same cell twice
             uint32 cell_id = (y * TOTAL_NUMBER_OF_CELLS_PER_MAP) + x;
-            if (isCellMarked(cell_id))
-                continue;
-
             markCell(cell_id);
-            CellCoord pair(x, y);
-            Cell cell(pair);
-
-            Visit(cell, gridVisitor);
-            Visit(cell, worldVisitor);
-
-            if (!isCellMarkedLarge(cell_id))
-            {
-                markCellLarge(cell_id);
-                Visit(cell, largeGridVisitor);
-                Visit(cell, largeWorldVisitor);
-            }
         }
     }
 }
@@ -588,16 +534,20 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
     if (t_diff)
         _dynamicTree.update(t_diff);
 
-    /// update worldsessions for existing players
+    // Update world sessions and players
     for (m_mapRefIter = m_mapRefMgr.begin(); m_mapRefIter != m_mapRefMgr.end(); ++m_mapRefIter)
     {
         Player* player = m_mapRefIter->GetSource();
         if (player && player->IsInWorld())
         {
-            //player->Update(t_diff);
+            // Update session
             WorldSession* session = player->GetSession();
             MapSessionFilter updater(session);
             session->Update(s_diff, updater);
+
+            // update players at tick
+            if (!t_diff)
+                player->Update(s_diff);
         }
     }
 
@@ -605,55 +555,14 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
 
     if (!t_diff)
     {
-        for (m_mapRefIter = m_mapRefMgr.begin(); m_mapRefIter != m_mapRefMgr.end(); ++m_mapRefIter)
-        {
-            Player* player = m_mapRefIter->GetSource();
-
-            if (!player || !player->IsInWorld())
-                continue;
-
-            // update players at tick
-            player->Update(s_diff);
-        }
-
         HandleDelayedVisibility();
         return;
     }
 
-    /// update active cells around players and active objects
+    _updatableObjectListRecheckTimer.Update(t_diff);
     resetMarkedCells();
-    resetMarkedCellsLarge();
 
-    Acore::ObjectUpdater updater(t_diff, false);
-
-    // for creature
-    TypeContainerVisitor<Acore::ObjectUpdater, GridTypeMapContainer  > grid_object_update(updater);
-    // for pets
-    TypeContainerVisitor<Acore::ObjectUpdater, WorldTypeMapContainer > world_object_update(updater);
-
-    // for large creatures
-    Acore::ObjectUpdater largeObjectUpdater(t_diff, true);
-    TypeContainerVisitor<Acore::ObjectUpdater, GridTypeMapContainer  > grid_large_object_update(largeObjectUpdater);
-    TypeContainerVisitor<Acore::ObjectUpdater, WorldTypeMapContainer  > world_large_object_update(largeObjectUpdater);
-
-    // pussywizard: container for far creatures in combat with players
-    std::vector<Creature*> updateList;
-    updateList.reserve(10);
-
-    // non-player active objects, increasing iterator in the loop in case of object removal
-    for (m_activeNonPlayersIter = m_activeNonPlayers.begin(); m_activeNonPlayersIter != m_activeNonPlayers.end();)
-    {
-        WorldObject* obj = *m_activeNonPlayersIter;
-        ++m_activeNonPlayersIter;
-
-        if (!obj || !obj->IsInWorld())
-            continue;
-
-        VisitNearbyCellsOf(obj, grid_object_update, world_object_update, grid_large_object_update, world_large_object_update);
-    }
-
-    // the player iterator is stored in the map object
-    // to make sure calls to Map::Remove don't invalidate it
+    // Update players
     for (m_mapRefIter = m_mapRefMgr.begin(); m_mapRefIter != m_mapRefMgr.end(); ++m_mapRefIter)
     {
         Player* player = m_mapRefIter->GetSource();
@@ -661,54 +570,37 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
         if (!player || !player->IsInWorld())
             continue;
 
-        // update players at tick
         player->Update(s_diff);
 
-        VisitNearbyCellsOfPlayer(player, grid_object_update, world_object_update, grid_large_object_update, world_large_object_update);
-
-        // If player is using far sight, visit that object too
-        if (WorldObject* viewPoint = player->GetViewpoint())
+        if (_updatableObjectListRecheckTimer.Passed())
         {
-            if (Creature* viewCreature = viewPoint->ToCreature())
-            {
-                VisitNearbyCellsOf(viewCreature, grid_object_update, world_object_update, grid_large_object_update, world_large_object_update);
-            }
-            else if (DynamicObject* viewObject = viewPoint->ToDynObject())
-            {
-                VisitNearbyCellsOf(viewObject, grid_object_update, world_object_update, grid_large_object_update, world_large_object_update);
-            }
-        }
+            MarkNearbyCellsOf(player);
 
-        // handle updates for creatures in combat with player and are more than X yards away
-        if (player->IsInCombat())
-        {
-            updateList.clear();
-            float rangeSq = player->GetGridActivationRange() - 1.0f;
-            rangeSq = rangeSq * rangeSq;
-            HostileReference* ref = player->getHostileRefMgr().getFirst();
-            while (ref)
+            // If player is using far sight, update viewpoint
+            if (WorldObject* viewPoint = player->GetViewpoint())
             {
-                if (Unit* unit = ref->GetSource()->GetOwner())
-                    if (Creature* cre = unit->ToCreature())
-                        if (cre->FindMap() == player->FindMap() && cre->GetExactDist2dSq(player) > rangeSq)
-                            updateList.push_back(cre);
-                ref = ref->next();
+                if (Creature* viewCreature = viewPoint->ToCreature())
+                    MarkNearbyCellsOf(viewCreature);
+                else if (DynamicObject* viewObject = viewPoint->ToDynObject())
+                    MarkNearbyCellsOf(viewObject);
             }
-            for (std::vector<Creature*>::const_iterator itr = updateList.begin(); itr != updateList.end(); ++itr)
-                VisitNearbyCellsOf(*itr, grid_object_update, world_object_update, grid_large_object_update, world_large_object_update);
         }
     }
 
-    for (_transportsUpdateIter = _transports.begin(); _transportsUpdateIter != _transports.end();) // pussywizard: transports updated after VisitNearbyCellsOf, grids around are loaded, everything ok
+    if (_updatableObjectListRecheckTimer.Passed())
     {
-        MotionTransport* transport = *_transportsUpdateIter;
-        ++_transportsUpdateIter;
+        // Mark all cells near active objects
+        for (m_activeNonPlayersIter = m_activeNonPlayers.begin(); m_activeNonPlayersIter != m_activeNonPlayers.end(); ++m_activeNonPlayersIter)
+        {
+            WorldObject* obj = *m_activeNonPlayersIter;
+            if (!obj || !obj->IsInWorld())
+                continue;
 
-        if (!transport->IsInWorld())
-            continue;
-
-        transport->Update(t_diff);
+            MarkNearbyCellsOf(obj);
+        }
     }
+
+    UpdateNonPlayerObjects(t_diff);
 
     SendObjectUpdates();
 
@@ -735,6 +627,101 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
     METRIC_VALUE("map_gameobjects", uint64(GetObjectsStore().Size<GameObject>()),
         METRIC_TAG("map_id", std::to_string(GetId())),
         METRIC_TAG("map_instanceid", std::to_string(GetInstanceId())));
+}
+
+void Map::UpdateNonPlayerObjects(uint32 const diff)
+{
+    for (WorldObject* obj : _pendingAddUpdatableObjectList)
+        _AddObjectToUpdateList(obj);
+    _pendingAddUpdatableObjectList.clear();
+
+    if (_updatableObjectListRecheckTimer.Passed())
+    {
+        for (uint32 i = 0; i < _updatableObjectList.size();)
+        {
+            WorldObject* obj = _updatableObjectList[i];
+            if (!obj->IsInWorld())
+            {
+                ++i;
+                continue;
+            }
+
+            obj->Update(diff);
+
+            if (!obj->IsUpdateNeeded())
+            {
+                _RemoveObjectFromUpdateList(obj);
+                // Intentional no iteration here, obj is swapped with last element in
+                // _updatableObjectList so next loop will update that object at the same index
+            }
+            else
+                ++i;
+        }
+        _updatableObjectListRecheckTimer.Reset();
+    }
+    else
+    {
+        for (uint32 i = 0; i < _updatableObjectList.size(); ++i)
+        {
+            WorldObject* obj = _updatableObjectList[i];
+            if (!obj->IsInWorld())
+                continue;
+
+            obj->Update(diff);
+        }
+    }
+}
+
+void Map::AddObjectToPendingUpdateList(WorldObject* obj)
+{
+    if (!obj->CanBeAddedToMapUpdateList())
+        return;
+
+    UpdatableMapObject* mapUpdatableObject = dynamic_cast<UpdatableMapObject*>(obj);
+    if (mapUpdatableObject->GetUpdateState() != UpdatableMapObject::UpdateState::NotUpdating)
+        return;
+
+    _pendingAddUpdatableObjectList.insert(obj);
+    mapUpdatableObject->SetUpdateState(UpdatableMapObject::UpdateState::PendingAdd);
+}
+
+// Internal use only
+void Map::_AddObjectToUpdateList(WorldObject* obj)
+{
+    UpdatableMapObject* mapUpdatableObject = dynamic_cast<UpdatableMapObject*>(obj);
+    ASSERT(mapUpdatableObject && mapUpdatableObject->GetUpdateState() == UpdatableMapObject::UpdateState::PendingAdd);
+
+    mapUpdatableObject->SetUpdateState(UpdatableMapObject::UpdateState::Updating);
+    mapUpdatableObject->SetMapUpdateListOffset(_updatableObjectList.size());
+    _updatableObjectList.push_back(obj);
+}
+
+// Internal use only
+void Map::_RemoveObjectFromUpdateList(WorldObject* obj)
+{
+    UpdatableMapObject* mapUpdatableObject = dynamic_cast<UpdatableMapObject*>(obj);
+    ASSERT(mapUpdatableObject && mapUpdatableObject->GetUpdateState() == UpdatableMapObject::UpdateState::Updating);
+
+    if (obj != _updatableObjectList.back())
+    {
+        dynamic_cast<UpdatableMapObject*>(_updatableObjectList.back())->SetMapUpdateListOffset(mapUpdatableObject->GetMapUpdateListOffset());
+        std::swap(_updatableObjectList[mapUpdatableObject->GetMapUpdateListOffset()], _updatableObjectList.back());
+    }
+
+    _updatableObjectList.pop_back();
+    mapUpdatableObject->SetUpdateState(UpdatableMapObject::UpdateState::NotUpdating);
+}
+
+void Map::RemoveObjectFromMapUpdateList(WorldObject* obj)
+{
+    if (!obj->CanBeAddedToMapUpdateList())
+        return;
+
+    UpdatableMapObject* mapUpdatableObject = dynamic_cast<UpdatableMapObject*>(obj);
+    if (mapUpdatableObject->GetUpdateState() == UpdatableMapObject::UpdateState::PendingAdd)
+        _pendingAddUpdatableObjectList.erase(obj);
+    else if (mapUpdatableObject->GetUpdateState() == UpdatableMapObject::UpdateState::Updating)
+        _RemoveObjectFromUpdateList(obj);
 }
 
 void Map::HandleDelayedVisibility()
@@ -804,7 +791,10 @@ void Map::RemoveFromMap(T* obj, bool remove)
     obj->ResetMap();
 
     if (remove)
+    {
+        RemoveObjectFromMapUpdateList(obj);
         DeleteFromWorld(obj);
+    }
 }
 
 template<>
@@ -839,6 +829,10 @@ void Map::RemoveFromMap(MotionTransport* obj, bool remove)
         _transports.erase(obj);
 
     obj->ResetMap();
+
+    // Transports are never actually deleted, but it *should* be safe to clear
+    // from update list when removing from world
+    RemoveObjectFromMapUpdateList(obj);
 
     if (remove)
     {
@@ -1379,7 +1373,7 @@ LiquidData const Map::GetLiquidData(uint32 phaseMask, float x, float y, float z,
         if (liquid_level > ground_level && G3D::fuzzyGe(z, ground_level - GROUND_HEIGHT_TOLERANCE))
         {
             // hardcoded in client like this
-            if (GetId() == 530 && liquid_type == 2)
+            if (GetId() == MAP_OUTLAND && liquid_type == 2)
                 liquid_type = 15;
 
             uint32 liquidFlagType = 0;
@@ -1435,7 +1429,7 @@ LiquidData const Map::GetLiquidData(uint32 phaseMask, float x, float y, float z,
             {
                 // hardcoded in client like this
                 uint32 liquidEntry = map_data.Entry;
-                if (GetId() == 530 && liquidEntry == 2)
+                if (GetId() == MAP_OUTLAND && liquidEntry == 2)
                     liquidEntry = 15;
 
                 liquidData = map_data;
@@ -1532,7 +1526,7 @@ void Map::GetFullTerrainStatusForPosition(uint32 /*phaseMask*/, float x, float y
     if (wmoData && wmoData->liquidInfo && wmoData->liquidInfo->level > wmoData->floorZ)
     {
         uint32 liquidType = wmoData->liquidInfo->type;
-        if (GetId() == 530 && liquidType == 2) // gotta love blizzard hacks
+        if (GetId() == MAP_OUTLAND && liquidType == 2) // gotta love blizzard hacks
             liquidType = 15;
 
         uint32 liquidFlagType = 0;
@@ -1581,7 +1575,7 @@ void Map::GetFullTerrainStatusForPosition(uint32 /*phaseMask*/, float x, float y
         if (gridLiquidData.Status != LIQUID_MAP_NO_WATER && (!wmoData || gridLiquidData.Level > wmoData->floorZ))
         {
             uint32 liquidEntry = gridLiquidData.Entry;
-            if (GetId() == 530 && liquidEntry == 2)
+            if (GetId() == MAP_OUTLAND && liquidEntry == 2)
                 liquidEntry = 15;
 
             data.liquidInfo = gridLiquidData;
@@ -1674,14 +1668,16 @@ bool Map::IsUnderWater(uint32 phaseMask, float x, float y, float z, float collis
 
 bool Map::HasEnoughWater(WorldObject const* searcher, float x, float y, float z) const
 {
-    LiquidData const& liquidData = const_cast<Map*>(this)->GetLiquidData(searcher->GetPhaseMask(), x, y, z, searcher->GetCollisionHeight(), MAP_ALL_LIQUIDS);
-    return (liquidData.Status & MAP_LIQUID_STATUS_SWIMMING) != 0 && HasEnoughWater(searcher, liquidData);
-}
+    LiquidData const& liquidData = const_cast<Map*>(this)->GetLiquidData(
+        searcher->GetPhaseMask(), x, y, z, searcher->GetCollisionHeight(), MAP_ALL_LIQUIDS);
 
-bool Map::HasEnoughWater(WorldObject const* searcher, LiquidData const& liquidData) const
-{
+    if ((liquidData.Status & MAP_LIQUID_STATUS_SWIMMING) == 0)
+        return false;
+
     float minHeightInWater = searcher->GetMinHeightInWater();
-    return liquidData.Level > INVALID_HEIGHT && liquidData.Level > liquidData.DepthLevel && liquidData.Level - liquidData.DepthLevel >= minHeightInWater;
+    return liquidData.Level > INVALID_HEIGHT &&
+           liquidData.Level > liquidData.DepthLevel &&
+           liquidData.Level - liquidData.DepthLevel >= minHeightInWater;
 }
 
 char const* Map::GetMapName() const
@@ -2841,7 +2837,7 @@ Corpse* Map::ConvertCorpseToBones(ObjectGuid const ownerGuid, bool insignia /*= 
     // ignore bones creating option in case insignia
     if ((insignia ||
         (IsBattlegroundOrArena() ? sWorld->getBoolConfig(CONFIG_DEATH_BONES_BG_OR_ARENA) : sWorld->getBoolConfig(CONFIG_DEATH_BONES_WORLD))) &&
-        !IsGridCreated(corpse->GetPositionX(), corpse->GetPositionY()))
+        IsGridLoaded(corpse->GetPositionX(), corpse->GetPositionY()))
     {
         // Create bones, don't change Corpse
         bones = new Corpse();
