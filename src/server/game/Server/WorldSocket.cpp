@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -117,7 +117,7 @@ void EncryptableAndCompressiblePacket::CompressIfNeeded()
 }
 
 WorldSocket::WorldSocket(tcp::socket&& socket)
-    : Socket(std::move(socket)), _OverSpeedPings(0), _worldSession(nullptr), _authed(false), _sendBufferSize(4096)
+    : Socket(std::move(socket)), _OverSpeedPings(0), _worldSession(nullptr), _authed(false), _sendBufferSize(4096), _loggingPackets(false)
 {
     Acore::Crypto::GetRandomBytes(_authSeed);
     _headerBuffer.Resize(sizeof(ClientPktHeader));
@@ -406,7 +406,7 @@ WorldSocket::ReadDataHandlerResult WorldSocket::ReadDataHandler()
     WorldPacket packet(opcode, std::move(_packetBuffer));
     WorldPacket* packetToQueue;
 
-    if (sPacketLog->CanLogPacket())
+    if (sPacketLog->CanLogPacket() && IsLoggingPackets())
         sPacketLog->LogPacket(packet, CLIENT_TO_SERVER, GetRemoteIpAddress(), GetRemotePort());
 
     std::unique_lock<std::mutex> sessionGuard(_worldSessionLock, std::defer_lock);
@@ -520,7 +520,7 @@ void WorldSocket::SendPacket(WorldPacket const& packet)
     if (!IsOpen())
         return;
 
-    if (sPacketLog->CanLogPacket())
+    if (sPacketLog->CanLogPacket() && IsLoggingPackets())
         sPacketLog->LogPacket(packet, SERVER_TO_CLIENT, GetRemoteIpAddress(), GetRemotePort());
 
     _bufferQueue.Enqueue(new EncryptableAndCompressiblePacket(packet, _authCrypt.IsInitialized()));
@@ -698,8 +698,6 @@ void WorldSocket::HandleAuthSessionCallback(std::shared_ptr<AuthSession> authSes
 
     LoginDatabase.Execute(stmt);
 
-    AccountMgr::ValidateAccountFlags(account.Id, account.Flags, account.Security);
-
     // At this point, we can safely hook a successful login
     sScriptMgr->OnAccountLogin(account.Id);
 
@@ -707,7 +705,7 @@ void WorldSocket::HandleAuthSessionCallback(std::shared_ptr<AuthSession> authSes
 
     sScriptMgr->OnLastIpUpdate(account.Id, address);
 
-    _worldSession = new WorldSession(account.Id, std::move(authSession->Account), shared_from_this(), account.Security,
+    _worldSession = new WorldSession(account.Id, std::move(authSession->Account), account.Flags, shared_from_this(), account.Security,
         account.Expansion, account.MuteTime, account.Locale, account.Recruiter, account.IsRectuiter, account.Security ? true : false, account.TotalTime);
 
     _worldSession->ReadAddonsInfo(authSession->AddonInfo);
@@ -717,6 +715,8 @@ void WorldSocket::HandleAuthSessionCallback(std::shared_ptr<AuthSession> authSes
     {
         _worldSession->InitWarden(account.SessionKey, account.OS);
     }
+
+    _worldSession->ValidateAccountFlags();
 
     sWorldSessionMgr->AddSession(_worldSession);
 

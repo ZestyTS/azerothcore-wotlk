@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -605,7 +605,8 @@ public:
                 creature->GetMotionMaster()->MoveJumpTo(0, 0.4f, 0.4f);
                 creature->SetFaction(FACTION_ESCORTEE_N_NEUTRAL_PASSIVE);
 
-                pEscortAI->Start(false, false, player->GetGUID());
+                creature->SetWalk(true);
+                pEscortAI->Start(false, player->GetGUID());
                 creature->AI()->Talk(SAY_WP_1);
             }
         }
@@ -1147,17 +1148,7 @@ public:
         {
             if (apply && passenger->IsPlayer())
             {
-                Movement::PointsArray pathPoints;
-                pathPoints.push_back(G3D::Vector3(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ()));
-
-                WaypointPath const* i_path = sWaypointMgr->GetPath(NPC_PLANE);
-                for (uint8 i = 0; i < i_path->size(); ++i)
-                {
-                    WaypointData const* node = i_path->at(i);
-                    pathPoints.push_back(G3D::Vector3(node->x, node->y, node->z));
-                }
-
-                me->GetMotionMaster()->MoveSplinePath(&pathPoints);
+                me->GetMotionMaster()->MovePath(NPC_PLANE, FORCED_MOVEMENT_NONE, PathSource::WAYPOINT_MGR);
             }
         }
 

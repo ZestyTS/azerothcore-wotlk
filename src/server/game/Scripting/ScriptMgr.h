@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -334,6 +334,7 @@ public: /* PlayerScript */
     void OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim, uint8 xpSource);
     bool OnPlayerReputationChange(Player* player, uint32 factionID, int32& standing, bool incremental);
     void OnPlayerReputationRankChange(Player* player, uint32 factionID, ReputationRank newRank, ReputationRank oldRank, bool increased);
+    void OnPlayerGiveReputation(Player* player, int32 factionID, float& amount, ReputationSource repSource);
     void OnPlayerLearnSpell(Player* player, uint32 spellID);
     void OnPlayerForgotSpell(Player* player, uint32 spellID);
     void OnPlayerDuelRequest(Player* target, Player* challenger);
@@ -571,9 +572,6 @@ public: /* UnitScript */
     void OnAuraApply(Unit* /*unit*/, Aura* /*aura*/);
     void OnAuraRemove(Unit* unit, AuraApplication* aurApp, AuraRemoveMode mode);
     bool IfNormalReaction(Unit const* unit, Unit const* target, ReputationRank& repRank);
-    bool IsNeedModSpellDamagePercent(Unit const* unit, AuraEffect* auraEff, float& doneTotalMod, SpellInfo const* spellProto);
-    bool IsNeedModMeleeDamagePercent(Unit const* unit, AuraEffect* auraEff, float& doneTotalMod, SpellInfo const* spellProto);
-    bool IsNeedModHealPercent(Unit const* unit, AuraEffect* auraEff, float& doneTotalMod, SpellInfo const* spellProto);
     bool CanSetPhaseMask(Unit const* unit, uint32 newPhaseMask, bool update);
     bool IsCustomBuildValuesUpdate(Unit const* unit, uint8 updateType, ByteBuffer& fieldBuffer, Player const* target, uint16 index);
     bool ShouldTrackValuesUpdatePosByIndex(Unit const* unit, uint8 updateType, uint16 index);
@@ -592,7 +590,7 @@ public: /* AllCreatureScript */
     //listener function (OnAllCreatureUpdate) is called by OnCreatureUpdate
     //void OnAllCreatureUpdate(Creature* creature, uint32 diff);
     void OnBeforeCreatureSelectLevel(const CreatureTemplate* cinfo, Creature* creature, uint8& level);
-    void Creature_SelectLevel(const CreatureTemplate* cinfo, Creature* creature);
+    void OnCreatureSelectLevel(const CreatureTemplate* cinfo, Creature* creature);
     void OnCreatureSaveToDB(Creature* creature);
 
 public: /* AllGameobjectScript */
@@ -631,8 +629,6 @@ public: /* Arena Team Script */
 
 public: /* SpellSC */
     void OnCalcMaxDuration(Aura const* aura, int32& maxDuration);
-    bool CanModAuraEffectDamageDone(AuraEffect const* auraEff, Unit* target, AuraApplication const* aurApp, uint8 mode, bool apply);
-    bool CanModAuraEffectModDamagePercentDone(AuraEffect const* auraEff, Unit* target, AuraApplication const* aurApp, uint8 mode, bool apply);
     void OnSpellCheckCast(Spell* spell, bool strict, SpellCastResult& res);
     bool CanPrepare(Spell* spell, SpellCastTargets const* targets, AuraEffect const* triggeredByAura);
     bool CanScalingEverything(Spell* spell);
